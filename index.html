@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#4f6ef7">
+<title>我的课程表 · 本学期</title>
+<link rel="stylesheet" href="css/style.css">
+<script>
+/* 诊断：脚本出错、或页面根本没执行脚本时，在顶部直接显示原因（便于排查手机端「内容为空」） */
+(function () {
+  function show(msg) {
+    try {
+      var box = document.getElementById('jsDiag');
+      if (!box) {
+        box = document.createElement('div');
+        box.id = 'jsDiag';
+        box.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;background:#b3261e;color:#fff;' +
+          'font:12px/1.7 monospace;padding:10px 12px;white-space:pre-wrap;word-break:break-all;max-height:50%;overflow:auto';
+        (document.body || document.documentElement).appendChild(box);
+      }
+      box.textContent += msg + '\n';
+    } catch (e) {}
+  }
+  window.onerror = function (msg, src, line) {
+    show('⚠ 脚本错误：' + msg + '（第 ' + line + ' 行）');
+    return false;
+  };
+  window.addEventListener('DOMContentLoaded', function () {
+    setTimeout(function () {
+      var t = document.getElementById('clockTime');
+      if (t && t.textContent.indexOf('--:') === 0) {
+        show('⚠ 页面已加载，但 JavaScript 没有执行（时钟仍停在 --:--:--）。\n浏览器：' + navigator.userAgent);
+      }
+    }, 1500);
+  });
+})();
+</script>
+</head>
+<body>
+
+<noscript>
+  <div style="margin:12px;padding:12px 14px;border-radius:12px;background:#fff4e5;border:1px solid #ffd8a8;color:#8a4b00;font:13px/1.7 system-ui,sans-serif">
+    ⚠ 当前环境没有运行 JavaScript，课表无法显示。<br>
+    你打开的可能是「文件预览」而不是浏览器：请回到文件所在位置，长按文件 → 用其他应用打开 → 选择「浏览器 / Chrome」。
+  </div>
+</noscript>
+
+<!-- ===== 头部：实时时钟 + 下节课预告（等宽并排，靠右） ===== -->
+<header class="hero">
+  <div class="clock-card">
+    <div id="clockTime" class="clock-time">--:--:--</div>
+    <div id="clockDate" class="clock-date">加载中…</div>
+    <div id="clockWeek" class="clock-week">…</div>
+  </div>
+  <section id="nextClass" class="next-class"></section>
+</header>
+
+<main>
+
+  <!-- ===== 课表总览 ===== -->
+  <section class="card">
+    <h2>📅 课表总览</h2>
+    <div id="dayChips" class="day-chips"></div>
+    <div id="schedule" class="schedule"></div>
+    <p class="tip">💡 点击空格子上的「＋」可直接新建课程（星期与大节已按所点格子填好）；<b>点击已有的课程块可直接修改或删除</b>；手机上可通过顶部日期片切换查看某一天。🎉 法定节假日当天自动跳过课程并标注节日名称。<br>同一时段周次重叠会被判定为时间冲突并阻止保存；需要一次导入多门课，请用下方「📥 批量导入课程」。</p>
+  </section>
+
+  <!-- ===== 周次切换条 + 学期设置（放在课表下方） ===== -->
+  <section class="card weekbar" id="cardWeekbar">
+    <h2>🗓 周次切换</h2>
+    <div class="settings-row">
+      <span>🗓 学期第 1 周开始日期</span>
+      <input type="date" id="semesterStart">
+      <button id="btnSaveStart" class="btn small">保存</button>
+      <button id="btnThisWeek" class="btn small">回到本周</button>
+      <span id="weekNote" class="week-note"></span>
+    </div>
+    <div id="weekChips" class="week-chips"></div>
+  </section>
+
+  <!-- ===== 活动记录与提醒 ===== -->
+  <section class="card" id="cardActivity">
+    <h2>⏰ 活动记录与提醒</h2>
+    <form id="activityForm" class="form-grid">
+      <label>活动名称 *
+        <input id="actTitle" required placeholder="如：高数期中考试 / 交实验报告">
+      </label>
+      <label>提醒时间 *
+        <input id="actTime" type="datetime-local" required>
+      </label>
+      <label>提前提醒
+        <select id="actBefore">
+          <option value="0">准时提醒</option>
+          <option value="5">提前 5 分钟</option>
+          <option value="10" selected>提前 10 分钟</option>
+          <option value="30">提前 30 分钟</option>
+          <option value="60">提前 1 小时</option>
+        </select>
+      </label>
+      <label>提醒音效
+        <select id="soundSel"></select>
+      </label>
+      <label>响铃时长
+        <select id="ringDur"></select>
+      </label>
+      <div class="form-foot">
+        <button type="submit" class="btn primary">＋ 添加活动</button>
+        <button type="button" id="btnTestSound" class="btn">🔔 试听音效</button>
+        <button type="button" id="btnStopRing" class="btn" disabled>⏹ 停止响铃</button>
+        <span id="soundMsg" class="form-msg"></span>
+      </div>
+    </form>
+    <p class="tip">到点后页面顶部会弹出醒目提醒并播放提示音（浏览器限制：请先点击页面任意位置以启用声音）。上课预告：每节课开始前 10 分钟自动弹窗预告。可分别选择「提醒音效」与「响铃时长」（单次 / 多次 / 持续若干秒 / 一直响），切换即试听；响铃过程中可随时点「停止响铃」，关闭提醒横幅也会立即停止。<br>
+      <b>注意：</b>本页是纯前端网页，<b>必须保持标签页打开</b>才会提醒（关闭页面、电脑休眠期间不会提醒）。若错过时间在 30 分钟内，回到页面会补一次「迟到的提醒」。</p>
+    <div id="activityList"></div>
+  </section>
+
+  <!-- ===== 调休补课（放在课表下方，避免遮挡课表） ===== -->
+  <section class="card" id="cardMakeup">
+    <h2>🔁 调休补课</h2>
+    <div class="settings-row">
+      <span>调休上课日</span>
+      <input type="date" id="makeupDate">
+      <span>按</span>
+      <select id="makeupDay"></select>
+      <span>的课表上课</span>
+      <button id="btnAddMakeup" class="btn small">添加</button>
+      <span id="makeupMsg" class="form-msg"></span>
+    </div>
+    <div id="makeupList" class="makeup-list"></div>
+    <p class="tip">法定节假日（中秋 / 国庆 / 元旦）当天的格子会自动显示「放假」且不排课。调休的周末上课日如下，选好日期与「补哪一天的课」后点击添加，该天就会按对应星期的课表显示。</p>
+  </section>
+
+  <!-- ===== 批量导入 ===== -->
+  <section class="card" id="cardImport">
+    <h2>📥 批量导入课程</h2>
+
+    <!-- Excel 文件导入 -->
+    <div class="excel-upload">
+      <label for="excelFile" class="btn primary" style="display:inline-block;cursor:pointer">
+        📂 选择文件（Excel / CSV）
+      </label>
+      <input type="file" id="excelFile" accept=".xlsx,.xls,.csv,.txt,.tsv" style="display:none">
+      <span id="excelMsg" class="form-msg"></span>
+    </div>
+    <p class="tip">
+      直接上传教务系统导出的表格即可，会自动识别并导入，无需整理格式：<br>
+      · <b>文件类型</b>：.xlsx / .xls / .csv / .txt（CSV 自动识别 UTF-8 与 GBK 编码，不会乱码）<br>
+      · <b>列顺序随意</b>，表头名称可模糊匹配（课程名称 / 任课教师 / 教室名称 / 上课星期 / 上课节次 / 上课周次 / 课程性质 / 备注等）；也支持「开始周 + 结束周」两列<br>
+      · <b>表格上方有标题行</b>也能识别（自动定位表头在第几行）；<b>多个工作表</b>会自动挑出最像课表的那一个<br>
+      · <b>完全没有表头</b>时，会按单元格内容自动推断各列（并提示推断结果供核对）<br>
+      · <b>课表网格</b>（星期横排、节次竖排的格子式课表）也能识别，格子里写「课程 / 教师 / 地点 / 周次」即可，未标注周次按全学期处理<br>
+      · 周次支持多段与单双周（如 <code>3-4周,6-18周</code>、<code>7-17周(单)</code>）；节次支持跨大节（如 <code>5-10节</code>），会自动按大节拆分<br>
+      支持 SheetJS 在线解析，若离线无法加载，请使用下方文本粘贴方式。
+    </p>
+
+    <!-- 文本粘贴导入（原有） -->
+    <p class="tip" style="margin-top:16px"><b>方式二：文本粘贴</b></p>
+    <textarea id="batchText" rows="6"
+      placeholder="每行一门课，格式：课程名称,教师,地点,星期(1-7),节次(如 5-6节 或 3),周次&#10;例如：高等数学,王教授,教1-201,1,3-4节,1-18&#10;多段周次请用分号：程序设计基础,薛海燕,信息楼102,4,7-8节,3周;6-7周;9-10周"></textarea>
+    <div class="form-foot" style="margin-top:10px">
+      <button id="btnBatchImport" class="btn primary">📥 导入</button>
+      <button id="btnBatchExample" class="btn">填入示例</button>
+      <span id="batchMsg" class="form-msg"></span>
+    </div>
+    <p class="tip">支持中英文逗号 / Tab 分隔（可直接从 Excel 复制粘贴），每行一门课；末尾可加「考试」标记为考试安排；格式错误或时间冲突的行会跳过并提示。</p>
+  </section>
+
+  <!-- ===== 课程清单 ===== -->
+  <section class="card" id="cardCourseList">
+    <h2>📋 课程清单</h2>
+    <div id="courseList"></div>
+    <button id="btnReset" class="btn small danger">♻ 恢复为内置课表</button>
+  </section>
+
+</main>
+
+<!-- ===== 课程编辑弹窗（点击课表中的课程块打开） ===== -->
+<div id="courseModal" class="modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <b id="cmTitle">课程</b>
+      <button type="button" id="cmClose" class="modal-x" title="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <label>课程名称 <input id="cmName" placeholder="如：高等数学（下）"></label>
+      <label>教师 <input id="cmTeacher" placeholder="选填"></label>
+      <label>上课地点 <input id="cmLocation" placeholder="如：教1-201"></label>
+      <label>课程类型
+        <select id="cmType">
+          <option value="normal">教学课</option>
+          <option value="exam">考试安排</option>
+        </select>
+      </label>
+      <label>星期 <select id="cmDay"></select></label>
+      <label>大节 <select id="cmPeriod"></select></label>
+      <label>开始周 <select id="cmStartWeek"></select></label>
+      <label>结束周 <select id="cmEndWeek"></select></label>
+      <div id="cmMsg" class="form-msg"></div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" id="cmSave" class="btn primary">💾 保存修改</button>
+      <button type="button" id="cmDelete" class="btn danger">🗑 删除这条</button>
+      <button type="button" id="cmCancel" class="btn">取消</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 顶部提醒横幅 ===== -->
+<div id="banner" class="banner">
+  <div class="banner-icon" id="bannerIcon">⏰</div>
+  <div class="banner-body">
+    <b id="bannerTitle"></b>
+    <div id="bannerText"></div>
+  </div>
+  <button id="bannerClose" class="banner-close" title="关闭">✕</button>
+</div>
+
+<footer>
+  <details class="foot-more">
+    <summary>❓ 使用说明</summary>
+    <b>使用说明（Dreamweaver）：</b>用 Dreamweaver 打开本文件夹，双击 index.html 即可在实时视图 / 浏览器中预览与编辑，无需任何构建工具。<br>
+    文件结构：index.html（页面）｜css/style.css（样式，含手机响应式）｜js/data.js（默认课表与配色）｜js/storage.js（本地存储）｜js/clock.js（实时时钟）｜js/reminder.js（提醒与音效）｜js/schedule.js（课表逻辑）｜js/app.js（入口）。<br>
+    所有课程、活动数据保存在浏览器本地（localStorage），换浏览器或清除缓存会恢复默认课表。手机访问：与电脑连同一 Wi-Fi，用手机浏览器打开 http://电脑IP:8000 即可。
+  </details>
+  <div class="foot-ver">当前版本：<span id="appVer" class="app-ver">v?</span>　如与预期不符，请按 Ctrl+Shift+R 强制刷新。</div>
+</footer>
+
+<!-- SheetJS：用于浏览器端解析 .xlsx 文件（异步加载，不阻塞页面渲染；离线时不影响其它功能，导入时会提示改用「文本粘贴」方式） -->
+<script>
+(function () {
+  var s = document.createElement('script');
+  s.src = 'https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js';
+  s.async = true;
+  document.head.appendChild(s);
+})();
+</script>
+
+<script src="js/data.js"></script>
+<script src="js/storage.js"></script>
+<script src="js/clock.js"></script>
+<script src="js/reminder.js"></script>
+<script src="js/schedule.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
